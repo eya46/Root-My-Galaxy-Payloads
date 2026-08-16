@@ -19,7 +19,7 @@ close $image_fh or die "close $image_path: $!\n";
 my @page_offsets = (0x000, 0x200, 0x400, 0x600,
                     0x800, 0xa00, 0xc00, 0xe00);
 my @rows;
-for my $slide (map { $_ * 0x10000 } 0 .. 31) {
+for my $slide (map { $_ * 0x8000 } 0 .. 62) {
     my $page_source = $probe_offset - $slide;
     $page_source >= 0
         or die sprintf("slide 0x%x exceeds probe offset 0x%x\n",
@@ -91,5 +91,5 @@ for my $row (@rows) {
     }
 }
 close $verify_fh or die "close verification input: $!\n";
-printf "verified 32 rows and 256 source qwords at probe 0x%x\n",
+printf "verified 64 rows and 256 source qwords at probe 0x%x\n",
        $probe_offset;

@@ -116,7 +116,15 @@ int slide_pselect_words_per_set(void) {
 }
 
 int slide_pselect_global_word(int waiter_word) {
-  return SLIDE_PSELECT_WORD_SHIFT + waiter_word;
+  static int shift = -2;
+  if (shift == -2) {
+    shift = SLIDE_PSELECT_WORD_SHIFT;
+    const char *forced = getenv("SLIDE_WORD_SHIFT");
+    if (forced && *forced) {
+      shift = atoi(forced);
+    }
+  }
+  return shift + waiter_word;
 }
 
 int slide_pselect_put_global_word(
@@ -624,6 +632,36 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
     int entered = atomic_load(&slide_consume_enter_sched) + 1;
     atomic_store(&slide_consume_enter_sched, entered);
     atomic_store(&slide_consume_calls, calls + 1);
+    if (getenv("SLIDE_SAFE")) {
+      char wbuf[128] = "?";
+      char pbuf[96];
+      snprintf(pbuf, sizeof(pbuf), "/proc/self/task/%d/wchan", tid);
+      int tfd = open(pbuf, O_RDONLY | O_CLOEXEC);
+      if (tfd >= 0) {
+        ssize_t wn = read(tfd, wbuf, sizeof(wbuf) - 1);
+        close(tfd);
+        if (wn <= 0) { wbuf[0] = '?'; wbuf[1] = 0; }
+        else { wbuf[wn] = 0; char *nl = strchr(wbuf, '\n'); if (nl) *nl = 0; }
+      }
+      char sbuf[96];
+      snprintf(sbuf, sizeof(sbuf), "/proc/self/task/%d/syscall", tid);
+      char sval[64] = "?";
+      int sfd = open(sbuf, O_RDONLY | O_CLOEXEC);
+      if (sfd >= 0) {
+        ssize_t sn = read(sfd, sval, sizeof(sval) - 1);
+        close(sfd);
+        if (sn <= 0) { sval[0] = '?'; sval[1] = 0; }
+        else { sval[sn] = 0; char *nl = strchr(sval, '\n'); if (nl) *nl = 0; }
+      }
+      pr_info("slide SAFE stop: waiter_tid=%d wchan=%s syscall=%s "
+              "(kernel dance NOT triggered)\n", tid, wbuf, sval);
+      atomic_store(&slide_consume_stop, 1);
+      atomic_store(&slide_route_done, 1);
+      while (atomic_load(&slide_consume_go)) {
+        __asm__ volatile("yield" ::: "memory");
+      }
+      return NULL;
+    }
     *errno_ptr = 0;
     long ret = sched_setattr_tid(tid, (calls % 19) + 1);
     int saved_errno = *errno_ptr;

